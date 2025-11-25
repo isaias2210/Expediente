@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>IFARHU – Plataforma Administrativa</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-flex">
+      <div class="header-title">Plataforma Administrativa – IFARHU</div>
+      <button onclick="logout()" class="logout-btn">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar">
+      <button class="side-btn" onclick="mostrarVista('inicio')">🏠 Inicio</button>
+      <button class="side-btn" onclick="mostrarVista('escuelas')">🏫 Mis Escuelas</button>
+      <button class="side-btn" onclick="mostrarVista('agregar')">➕ Agregar Registro</button>
+      <button class="side-btn" onclick="mostrarVista('buscar')">🔎 Búsqueda por Cédula</button>
+      <button class="side-btn admin-only" onclick="mostrarVista('admin')">⚙️ Administrador</button>
+    </nav>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="content">
+
+      <!-- INICIO -->
+      <section id="vista-inicio" class="vista">
+        <div class="card">
+          <h2>Bienvenido</h2>
+          <p>Seleccione una opción del menú lateral para comenzar.</p>
+          <div id="user-data"></div>
+        </div>
+      </section>
+
+      <!-- ESCUELAS -->
+      <section id="vista-escuelas" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Mis Escuelas</h2>
+          <select id="selectEscuela"></select>
+          <button onclick="cargarRegistros()">Ver registros</button>
+        </div>
+        <div class="card">
+          <h2>Registros</h2>
+          <div id="tablaRegistros">Seleccione una escuela.</div>
+        </div>
+      </section>
+
+      <!-- AGREGAR -->
+      <section id="vista-agregar" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Agregar Registro</h2>
+
+          <label>Escuela</label>
+          <select id="selectEscuelaAgregar"></select>
+
+          <label>Nombre del estudiante</label>
+          <input id="estudiante">
+
+          <label>Cédula</label>
+          <input id="cedula">
+
+          <label>Teléfono</label>
+          <input id="telefono">
+
+          <label>Documento entregado</label>
+          <select id="documento_entregado">
+            <option value="1">Sí</option>
+            <option value="0">No</option>
+          </select>
+
+          <label>Nota</label>
+          <input id="nota">
+
+          <label>Observación</label>
+          <textarea id="observacion"></textarea>
+
+          <button onclick="agregarRegistro()">Guardar registro</button>
+          <div id="mensajeRegistro"></div>
+        </div>
+      </section>
+
+      <!-- BUSCAR -->
+      <section id="vista-buscar" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Búsqueda por Cédula</h2>
+          <input type="text" id="buscarCedula" placeholder="Ej: 8-123-456">
+          <button onclick="buscarPorCedula()">Buscar</button>
+
+          <div id="resultadosBusqueda"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN -->
+      <section id="vista-admin" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Panel de Administración</h2>
+
+          <div class="admin-menu">
+            <button class="admin-btn" onclick="adminMostrar('usuarios')">Usuarios</button>
+            <button class="admin-btn" onclick="adminMostrar('crear')">Crear Usuario</button>
+            <button class="admin-btn" onclick="adminMostrar('editar')">Editar Usuario</button>
+            <!-- NUEVO BOTÓN LOGS -->
+            <button class="admin-btn" onclick="adminMostrar('logs')">Logs del sistema</button>
+          </div>
+
+          <!-- SECCIÓN: LISTA DE USUARIOS -->
+          <div id="admin-usuarios" class="admin-panel">
+            <h3>Lista de Usuarios</h3>
+            <div id="listaUsuarios">Cargando usuarios...</div>
+          </div>
+
+          <!-- SECCIÓN: CREAR USUARIO -->
+          <div id="admin-crear" class="admin-panel" style="display:none;">
+            <h3>Crear Usuario</h3>
+
+            <label>Usuario</label>
+            <input id="crearUsuario">
+
+            <label>Contraseña</label>
+            <input id="crearPassword" type="password">
+
+            <label>Escuelas (separadas por coma)</label>
+            <input id="crearEscuelas">
+
+            <label>Rol</label>
+            <select id="crearRol">
+              <option value="user">Usuario</option>
+              <option value="admin">Administrador</option>
+            </select>
+
+            <button onclick="adminCrearUsuario()">Crear</button>
+            <div id="crearMensaje"></div>
+          </div>
+
+          <!-- SECCIÓN: EDITAR USUARIO -->
+          <div id="admin-editar" class="admin-panel" style="display:none;">
+            <h3>Editar Usuario</h3>
+
+            <label>Seleccionar usuario</label>
+            <select id="selectUsuarioEditar" onchange="cargarDatosUsuarioEditar()">
+              <option value="">Seleccione...</option>
+            </select>
+
+            <label>Escuelas</label>
+            <input id="editEscuelas">
+
+            <label>Rol</label>
+            <select id="editRol">
+              <option value="user">Usuario</option>
+              <option value="admin">Administrador</option>
+            </select>
+
+            <button onclick="guardarCambiosUsuario()">Guardar cambios</button>
+            <div id="editarMensaje"></div>
+          </div>
+
+          <!-- SECCIÓN: LOGS DEL SISTEMA -->
+          <div id="admin-logs" class="admin-panel" style="display:none;">
+            <h3>Logs del sistema</h3>
+            <div id="tablaLogs">No hay logs todavía.</div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
