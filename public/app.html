@@ -25,6 +25,7 @@
       <button class="side-btn" onclick="mostrarVista('inicio')">🏠 Inicio</button>
       <button class="side-btn" onclick="mostrarVista('escuelas')">🏫 Mis Escuelas</button>
       <button class="side-btn" onclick="mostrarVista('agregar')">➕ Agregar Registro</button>
+      <button class="side-btn" onclick="mostrarVista('actualizar')">✏️ Actualizar Registro</button>
       <button class="side-btn" onclick="mostrarVista('buscar')">🔎 Búsqueda por Cédula</button>
       <button class="side-btn admin-only" onclick="mostrarVista('admin')">⚙️ Administrador</button>
     </nav>
@@ -35,9 +36,15 @@
       <!-- INICIO -->
       <section id="vista-inicio" class="vista">
         <div class="card">
-          <h2>Bienvenido</h2>
-          <p>Seleccione una opción del menú lateral para comenzar.</p>
-          <div id="user-data"></div>
+          <h2>Bienvenido(a)</h2>
+          <p>Use el menú de la izquierda para manejar los expedientes de los estudiantes de su escuela.</p>
+          <ul>
+            <li><strong>Mis Escuelas:</strong> ver registros existentes.</li>
+            <li><strong>Agregar Registro:</strong> añadir nuevos estudiantes.</li>
+            <li><strong>Actualizar Registro:</strong> buscar por cédula y corregir datos.</li>
+            <li><strong>Búsqueda por Cédula:</strong> ver todos los registros de un estudiante.</li>
+            <li><strong>Administrador:</strong> sólo para el usuario administrador.</li>
+          </ul>
         </div>
       </section>
 
@@ -45,12 +52,11 @@
       <section id="vista-escuelas" class="vista" style="display:none;">
         <div class="card">
           <h2>Mis Escuelas</h2>
-          <select id="selectEscuela"></select>
-          <button onclick="cargarRegistros()">Ver registros</button>
-        </div>
-        <div class="card">
-          <h2>Registros</h2>
-          <div id="tablaRegistros">Seleccione una escuela.</div>
+
+          <label>Seleccione la escuela</label>
+          <select id="selectEscuela" onchange="cargarRegistros()"></select>
+
+          <div id="tablaRegistros"></div>
         </div>
       </section>
 
@@ -77,6 +83,13 @@
             <option value="0">No</option>
           </select>
 
+          <label>Trimestre</label>
+          <select id="trimestre">
+            <option value="Primer trimestre">Primer trimestre</option>
+            <option value="Segundo trimestre">Segundo trimestre</option>
+            <option value="Tercer trimestre">Tercer trimestre</option>
+          </select>
+
           <label>Nota</label>
           <input id="nota">
 
@@ -99,6 +112,57 @@
         </div>
       </section>
 
+      <!-- ACTUALIZAR -->
+      <section id="vista-actualizar" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Actualización de Registro</h2>
+          <p>Busque por cédula y edite el registro que necesite.</p>
+          <input type="text" id="buscarCedulaActualizar" placeholder="Ej: 8-123-456">
+          <button onclick="buscarParaActualizar()">Buscar</button>
+          <div id="tablaActualizar"></div>
+        </div>
+
+        <div class="card" id="formActualizarCard" style="display:none;">
+          <h3>Editar registro</h3>
+
+          <input type="hidden" id="updFila">
+
+          <label>Escuela</label>
+          <input id="updEscuela" readonly>
+
+          <label>Nombre del estudiante</label>
+          <input id="updEstudiante">
+
+          <label>Cédula</label>
+          <input id="updCedula">
+
+          <label>Teléfono</label>
+          <input id="updTelefono">
+
+          <label>Documento entregado</label>
+          <select id="updDocumento">
+            <option value="1">Sí</option>
+            <option value="0">No</option>
+          </select>
+
+          <label>Trimestre</label>
+          <select id="updTrimestre">
+            <option value="Primer trimestre">Primer trimestre</option>
+            <option value="Segundo trimestre">Segundo trimestre</option>
+            <option value="Tercer trimestre">Tercer trimestre</option>
+          </select>
+
+          <label>Nota</label>
+          <input id="updNota">
+
+          <label>Observación</label>
+          <textarea id="updObservacion"></textarea>
+
+          <button onclick="guardarActualizacion()">Guardar cambios</button>
+          <div id="mensajeActualizar"></div>
+        </div>
+      </section>
+
       <!-- ADMIN -->
       <section id="vista-admin" class="vista" style="display:none;">
         <div class="card">
@@ -108,65 +172,82 @@
             <button class="admin-btn" onclick="adminMostrar('usuarios')">Usuarios</button>
             <button class="admin-btn" onclick="adminMostrar('crear')">Crear Usuario</button>
             <button class="admin-btn" onclick="adminMostrar('editar')">Editar Usuario</button>
-            <!-- NUEVO BOTÓN LOGS -->
             <button class="admin-btn" onclick="adminMostrar('logs')">Logs del sistema</button>
+            <button class="admin-btn" onclick="adminMostrar('stats')">Estadísticas</button>
+            <button class="admin-btn" onclick="adminMostrar('ayuda')">Ayuda</button>
           </div>
 
           <!-- SECCIÓN: LISTA DE USUARIOS -->
           <div id="admin-usuarios" class="admin-panel">
             <h3>Lista de Usuarios</h3>
-            <div id="listaUsuarios">Cargando usuarios...</div>
+            <div id="listaUsuarios">Cargando...</div>
           </div>
 
           <!-- SECCIÓN: CREAR USUARIO -->
           <div id="admin-crear" class="admin-panel" style="display:none;">
-            <h3>Crear Usuario</h3>
-
+            <h3>Crear Nuevo Usuario</h3>
             <label>Usuario</label>
-            <input id="crearUsuario">
+            <input id="nuevoUsuario">
 
             <label>Contraseña</label>
-            <input id="crearPassword" type="password">
-
-            <label>Escuelas (separadas por coma)</label>
-            <input id="crearEscuelas">
+            <input id="nuevoPassword" type="password">
 
             <label>Rol</label>
-            <select id="crearRol">
+            <select id="nuevoRol">
               <option value="user">Usuario</option>
               <option value="admin">Administrador</option>
             </select>
 
-            <button onclick="adminCrearUsuario()">Crear</button>
-            <div id="crearMensaje"></div>
+            <label>Escuelas (separadas por coma)</label>
+            <input id="nuevoEscuelas" placeholder="Escuela_A, Escuela_B">
+
+            <button onclick="crearUsuario()">Guardar Usuario</button>
+            <div id="mensajeNuevoUsuario"></div>
           </div>
 
           <!-- SECCIÓN: EDITAR USUARIO -->
           <div id="admin-editar" class="admin-panel" style="display:none;">
             <h3>Editar Usuario</h3>
 
-            <label>Seleccionar usuario</label>
-            <select id="selectUsuarioEditar" onchange="cargarDatosUsuarioEditar()">
-              <option value="">Seleccione...</option>
-            </select>
+            <label>Seleccione usuario</label>
+            <select id="selectUsuarioEditar" onchange="cargarDatosUsuario()"></select>
 
-            <label>Escuelas</label>
-            <input id="editEscuelas">
+            <label>Nueva contraseña (opcional)</label>
+            <input id="editarPassword" type="password">
 
-            <label>Rol</label>
-            <select id="editRol">
+            <label>Nuevo rol</label>
+            <select id="editarRol">
               <option value="user">Usuario</option>
               <option value="admin">Administrador</option>
             </select>
 
+            <label>Escuelas (separadas por coma)</label>
+            <input id="editarEscuelas">
+
             <button onclick="guardarCambiosUsuario()">Guardar cambios</button>
-            <div id="editarMensaje"></div>
+            <div id="mensajeEditarUsuario"></div>
           </div>
 
-          <!-- SECCIÓN: LOGS DEL SISTEMA -->
+          <!-- SECCIÓN: LOGS -->
           <div id="admin-logs" class="admin-panel" style="display:none;">
             <h3>Logs del sistema</h3>
             <div id="tablaLogs">No hay logs todavía.</div>
+          </div>
+
+          <!-- SECCIÓN: ESTADÍSTICAS -->
+          <div id="admin-stats" class="admin-panel" style="display:none;">
+            <h3>Estadísticas generales</h3>
+            <p>Resumen de registros por escuela y trimestre.</p>
+            <div id="tablaStats">Seleccione esta pestaña para cargar los datos.</div>
+          </div>
+
+          <!-- SECCIÓN: AYUDA -->
+          <div id="admin-ayuda" class="admin-panel" style="display:none;">
+            <h3>Ayuda rápida</h3>
+            <p><strong>1.</strong> Use <em>Mis Escuelas</em> para ver los registros de los centros que tiene asignados.</p>
+            <p><strong>2.</strong> En <em>Agregar Registro</em> puede capturar nuevos estudiantes.</p>
+            <p><strong>3.</strong> En <em>Actualización de Registro</em> busque por cédula y use el lápiz para corregir datos.</p>
+            <p><strong>4.</strong> El panel de <em>Administrador</em> permite gestionar usuarios, ver logs y estadísticas.</p>
           </div>
 
         </div>
@@ -177,4 +258,5 @@
 
   <script src="app.js"></script>
 </body>
+
 </html>
