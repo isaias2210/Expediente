@@ -351,3 +351,91 @@ async function cargarLogsUsuario() {
     tbody.appendChild(tr);
   });
 }
+// =============================================================
+// 🔵 OBTENER LISTA DE HOJAS EXISTENTES
+// =============================================================
+async function getSheetNames() {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+  });
+
+  return meta.data.sheets.map(s => s.properties.title);
+}
+
+// =============================================================
+// 🔵 CREAR HOJA SOLO SI NO EXISTE + AGREGAR HEADERS
+// =============================================================
+async function ensureSheetWithHeaders(name, headers) {
+  const existentes = await getSheetNames();
+
+  // --- Si NO existe → crearla ---
+  if (!existentes.includes(name)) {
+    console.log(`🟦 Creando hoja: ${name}`);
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: { title: name }
+            }
+          }
+        ],
+      },
+    });
+  } else {
+    console.log(`✔ Hoja ${name} ya existe, no se crea`);
+  }
+
+  // --- Colocar encabezados SIEMPRE ---
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${name}!A1:${String.fromCharCode(65 + headers.length - 1)}1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [headers] }
+  });
+}
+
+// =============================================================
+// 🔵 HOJA DE USUARIOS
+// =============================================================
+async function ensureUsuariosSheet() {
+  await ensureSheetWithHeaders("usuarios", [
+    "usuario",
+    "password",
+    "rol",
+    "escuelas"
+  ]);
+}
+
+// =============================================================
+// 🔵 HOJA DE LOGS
+// =============================================================
+async function ensureLogsSheet() {
+  await ensureSheetWithHeaders("logs", [
+    "fecha",
+    "usuario",
+    "accion",
+    "detalles",
+    "ip"
+  ]);
+}
+
+// =============================================================
+// 🔵 HOJA POR ESCUELA
+// =============================================================
+async function ensureEscuelaSheet(nombre) {
+  await ensureSheetWithHeaders(nombre, [
+    "fecha",
+    "estudiante",
+    "cedula",
+    "telefono",
+    "documento",
+    "nota",
+    "trimestre",
+    "observacion",
+    "subido_por",
+    "filaId"
+  ]);
+}
