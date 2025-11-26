@@ -16,72 +16,75 @@
       height: 100vh;
     }
 
-    .box {
-      background: white;
-      width: 92%;
-      max-width: 380px;
-      padding: 30px;
+    .login-card {
+      background: #ffffff;
+      padding: 24px;
       border-radius: 8px;
-      border: 1px solid #c8d0db;
-      box-shadow: 0px 2px 6px rgba(0,0,0,0.15);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+      max-width: 360px;
+      width: 100%;
     }
 
     h1 {
-      text-align: center;
       margin-top: 0;
       font-size: 22px;
       color: #003c71;
-      font-weight: bold;
-      margin-bottom: 25px;
+      text-align: center;
     }
 
     label {
-      font-size: 15px;
+      display: block;
+      margin-top: 12px;
       font-weight: bold;
       color: #003c71;
-      margin-bottom: 6px;
-      display: block;
+      font-size: 14px;
     }
 
     input {
       width: 100%;
-      padding: 12px;
-      font-size: 16px;
+      padding: 10px;
+      margin-top: 6px;
       border-radius: 4px;
-      border: 1px solid #b5c0cd;
-      margin-bottom: 15px;
+      border: 1px solid #b9c4d1;
+      font-size: 15px;
     }
 
     button {
       width: 100%;
-      padding: 13px;
+      margin-top: 18px;
+      padding: 12px;
       background: #003c71;
       color: white;
       border: none;
-      font-size: 17px;
       border-radius: 4px;
+      font-size: 16px;
       cursor: pointer;
-      margin-top: 5px;
     }
 
     button:hover {
-      background: #002a4f;
+      background: #00284c;
     }
 
     .error {
-      margin-top: 12px;
-      color: #b70000;
-      font-size: 15px;
+      margin-top: 10px;
+      color: #b00020;
+      font-size: 14px;
+      min-height: 18px;
+    }
+
+    .nota {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #555;
       text-align: center;
-      font-weight: bold;
     }
   </style>
 </head>
 
 <body>
-
-  <div class="box">
-    <h1>Ingreso al Sistema</h1>
+  <div class="login-card">
+    <h1>IFARHU – Expedientes</h1>
+    <p class="nota">Ingrese su usuario y contraseña asignados por el administrador.</p>
 
     <label for="usuario">Usuario</label>
     <input type="text" id="usuario" autocomplete="username">
@@ -107,22 +110,33 @@
         return;
       }
 
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ usuario, password })
-      });
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usuario, password })
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        error.textContent = data.error || "Error de inicio de sesión.";
-        return;
+        if (!res.ok) {
+          error.textContent = data.error || "Error de inicio de sesión.";
+          return;
+        }
+
+        window.location.href = "/app";
+      } catch (e) {
+        console.error(e);
+        error.textContent = "No se pudo conectar al servidor.";
       }
-
-      window.location.href = "/app";
     }
-  </script>
 
+    // Enter para enviar
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        login();
+      }
+    });
+  </script>
 </body>
 </html>
