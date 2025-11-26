@@ -1,236 +1,222 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>IFARHU – Expedientes</title>
+  <meta charset="UTF-8" />
+  <title>IFARHU – Plataforma Administrativa</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-
-  <!-- =============================== -->
-  <!-- 🔵 HEADER SUPERIOR -->
-  <!-- =============================== -->
-  <header class="topbar">
-    <h1>Sistema de Expedientes IFARHU</h1>
-    <button id="logoutBtn" class="logout-btn">Cerrar sesión</button>
+  <!-- HEADER -->
+  <header>
+    <div class="header-flex">
+      <div class="header-title">Plataforma Administrativa – IFARHU</div>
+      <div class="header-user">
+        <span id="txtUsuario"></span>
+        <button id="btnLogout" class="logout-btn" onclick="logout()">Cerrar sesión</button>
+      </div>
+    </div>
   </header>
 
-  <!-- =============================== -->
-  <!-- 🔵 CONTENEDOR PRINCIPAL -->
-  <!-- =============================== -->
   <div class="layout">
+    <!-- MENU LATERAL -->
+    <aside>
+      <button class="menu-btn" onclick="mostrarVista('lista')">📋 Ver registros</button>
+      <button class="menu-btn" onclick="mostrarVista('agregar')">➕ Agregar registro</button>
+      <button class="menu-btn" onclick="mostrarVista('actualizar')">✏️ Actualización de registro</button>
+      <div id="menuAdmin" style="display:none;">
+        <hr>
+        <div class="menu-admin-title">Panel administrador</div>
+        <button class="menu-btn" onclick="mostrarVista('admin-usuarios')">👥 Usuarios</button>
+        <button class="menu-btn" onclick="mostrarVista('admin-logs')">🧾 Logs</button>
+        <button class="menu-btn" onclick="mostrarVista('admin-resumen')">📊 Resumen por escuela</button>
+      </div>
+    </aside>
 
-    <!-- =============================== -->
-    <!-- 🔷 MENÚ LATERAL -->
-    <!-- =============================== -->
-    <nav class="sidebar">
-      <h3>Menú</h3>
+    <!-- CONTENIDO PRINCIPAL -->
+    <main>
+      <!-- VISTA LISTA -->
+      <section id="vista-lista" class="vista">
+        <div class="card">
+          <h2>Ver registros por escuela</h2>
+          <label>Escuela</label>
+          <select id="selectEscuelaLista"></select>
+          <button onclick="cargarRegistros()">Ver registros</button>
+        </div>
 
-      <button class="menu-btn" data-target="sec-agregar">
-        ➕ Añadir Registro
-      </button>
-
-      <button class="menu-btn" data-target="sec-actualizar">
-        ✏️ Actualizar Registro
-      </button>
-
-      <button class="menu-btn" data-target="sec-registros">
-        📄 Ver Registros
-      </button>
-
-      <button id="adminTab" class="menu-btn admin-only" data-target="sec-admin">
-        🛠 Panel Administrador
-      </button>
-
-      <button class="menu-btn" data-target="sec-logs">
-        📝 Logs del Sistema
-      </button>
-    </nav>
-
-    <!-- =============================== -->
-    <!-- 🔷 CONTENIDO DE SECCIONES -->
-    <!-- =============================== -->
-    <main class="content">
-
-      <!-- ===================================================== -->
-      <!-- 🔵 SECCIÓN: AGREGAR REGISTRO -->
-      <!-- ===================================================== -->
-      <section id="sec-agregar" class="section active">
-        <h2>➕ Añadir Registro</h2>
-
-        <label>Seleccionar Escuela:</label>
-        <select id="escuelaSelect"></select>
-
-        <label>Nombre del estudiante:</label>
-        <input type="text" id="estudiante">
-
-        <label>Cédula:</label>
-        <input type="text" id="cedula">
-
-        <label>Teléfono:</label>
-        <input type="text" id="telefono">
-
-        <label>Documento entregado:</label>
-        <select id="documento">
-          <option value="Sí">Sí</option>
-          <option value="No">No</option>
-        </select>
-
-        <label>Trimestre:</label>
-        <select id="trimestre">
-          <option value="Primer Trimestre">Primer Trimestre</option>
-          <option value="Segundo Trimestre">Segundo Trimestre</option>
-          <option value="Tercer Trimestre">Tercer Trimestre</option>
-        </select>
-
-        <label>Nota:</label>
-        <input type="number" min="1" max="5" step="0.1" id="nota">
-
-        <label>Observación:</label>
-        <textarea id="observacion"></textarea>
-
-        <button id="btnAgregar">Guardar Registro</button>
+        <div class="card">
+          <h2>Registros</h2>
+          <div id="tablaRegistros">Seleccione una escuela.</div>
+        </div>
       </section>
 
-      <!-- ===================================================== -->
-      <!-- 🔵 SECCIÓN: ACTUALIZAR REGISTRO -->
-      <!-- ===================================================== -->
-      <section id="sec-actualizar" class="section">
-        <h2>✏️ Actualizar Registro</h2>
+      <!-- VISTA AGREGAR -->
+      <section id="vista-agregar" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Agregar registro</h2>
 
-        <label>Buscar por cédula:</label>
-        <input type="text" id="buscarCedula">
-        <button id="btnBuscarCedula">Buscar</button>
+          <label>Escuela</label>
+          <select id="selectEscuelaAgregar"></select>
 
-        <table id="tablaActualizar">
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Cédula</th>
-              <th>Trimestre</th>
-              <th>Nota</th>
-              <th>Editar</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </section>
+          <label>Nombre del estudiante</label>
+          <input id="estudiante">
 
-      <!-- ===================================================== -->
-      <!-- 🔵 SECCIÓN: VER REGISTROS -->
-      <!-- ===================================================== -->
-      <section id="sec-registros" class="section">
-        <h2>📄 Registros por Escuela</h2>
-        <label>Seleccionar Escuela:</label>
-        <select id="selectVerEscuela"></select>
+          <label>Cédula</label>
+          <input id="cedula">
 
-        <table id="tablaRegistros">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Estudiante</th>
-              <th>Cédula</th>
-              <th>Documento</th>
-              <th>Trimestre</th>
-              <th>Nota</th>
-              <th>Observación</th>
-              <th>Subido por</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </section>
+          <label>Teléfono</label>
+          <input id="telefono">
 
-      <!-- ===================================================== -->
-      <!-- 🔵 SECCIÓN: PANEL ADMIN -->
-      <!-- ===================================================== -->
-      <section id="sec-admin" class="section admin-only">
-
-        <h2>🛠 Panel Administrador</h2>
-
-        <!-- ============ -->
-        <!-- USUARIOS -->
-        <!-- ============ -->
-        <div class="admin-card">
-          <h3>👤 Gestión de Usuarios</h3>
-
-          <label>Usuario:</label>
-          <input type="text" id="nuevoUsuario">
-
-          <label>Contraseña:</label>
-          <input type="text" id="nuevoPassword">
-
-          <label>Rol:</label>
-          <select id="nuevoRol">
-            <option value="user">Usuario</option>
-            <option value="admin">Administrador</option>
+          <label>Documento entregado</label>
+          <select id="documento_entregado">
+            <option value="1">Sí</option>
+            <option value="0">No</option>
           </select>
 
-          <label>Escuelas asignadas (separadas por coma):</label>
-          <input type="text" id="nuevoEscuelas">
+          <label>Nota</label>
+          <input id="nota">
 
-          <button id="btnCrearUsuario">Crear usuario</button>
+          <label>Trimestre</label>
+          <select id="trimestre">
+            <option value="Primer trimestre">Primer trimestre</option>
+            <option value="Segundo trimestre">Segundo trimestre</option>
+            <option value="Tercer trimestre">Tercer trimestre</option>
+          </select>
 
-          <h4>Usuarios existentes</h4>
-          <table id="tablaUsuarios"></table>
+          <label>Observación</label>
+          <textarea id="observacion"></textarea>
+
+          <button onclick="agregarRegistro()">Guardar registro</button>
+          <div id="mensajeAgregar" class="mensaje"></div>
         </div>
-
-        <!-- ============ -->
-        <!-- ESCUELAS -->
-        <!-- ============ -->
-        <div class="admin-card">
-          <h3>🏫 Gestión de Escuelas</h3>
-
-          <label>Nombre de escuela:</label>
-          <input type="text" id="nuevaEscuela">
-
-          <button id="btnCrearEscuela">Crear Escuela</button>
-
-          <h4>Escuelas existentes</h4>
-          <table id="tablaEscuelas"></table>
-        </div>
-
-        <!-- ============ -->
-        <!-- LOGS -->
-        <!-- ============ -->
-        <div class="admin-card">
-          <h3>📝 Historial del Sistema</h3>
-
-          <table id="tablaLogs">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Usuario</th>
-                <th>Acción</th>
-                <th>Detalles</th>
-                <th>IP</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
       </section>
 
-      <!-- ===================================================== -->
-      <!-- 🔵 SECCIÓN: LOGS PARA USUARIOS -->
-      <!-- ===================================================== -->
-      <section id="sec-logs" class="section">
-        <h2>📝 Mis Logs</h2>
+      <!-- VISTA ACTUALIZAR -->
+      <section id="vista-actualizar" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Actualización de registro</h2>
+          <label>Buscar por cédula</label>
+          <input id="buscarCedula">
+          <button onclick="buscarPorCedula()">Buscar</button>
+          <div id="mensajeBuscar" class="mensaje"></div>
+        </div>
 
-        <table id="tablaMisLogs">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Acción</th>
-              <th>Detalles</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div class="card">
+          <h2>Resultados</h2>
+          <div id="tablaBusqueda">Ingrese una cédula para buscar.</div>
+        </div>
+
+        <div class="card" id="cardEdicion" style="display:none;">
+          <h2>Editar registro</h2>
+          <div id="infoEdicion"></div>
+
+          <label>Nombre del estudiante</label>
+          <input id="editEstudiante">
+
+          <label>Cédula</label>
+          <input id="editCedula">
+
+          <label>Teléfono</label>
+          <input id="editTelefono">
+
+          <label>Documento entregado</label>
+          <select id="editDocumento">
+            <option value="1">Sí</option>
+            <option value="0">No</option>
+          </select>
+
+          <label>Nota</label>
+          <input id="editNota">
+
+          <label>Trimestre</label>
+          <select id="editTrimestre">
+            <option value="Primer trimestre">Primer trimestre</option>
+            <option value="Segundo trimestre">Segundo trimestre</option>
+            <option value="Tercer trimestre">Tercer trimestre</option>
+          </select>
+
+          <label>Observación</label>
+          <textarea id="editObservacion"></textarea>
+
+          <button onclick="guardarEdicion()">Guardar cambios</button>
+          <div id="mensajeEdicion" class="mensaje"></div>
+        </div>
       </section>
 
+      <!-- ADMIN: USUARIOS -->
+      <section id="vista-admin-usuarios" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Gestión de usuarios</h2>
+
+          <div class="admin-columns">
+            <div class="admin-col">
+              <h3>Usuarios existentes</h3>
+              <div id="listaUsuarios">Cargando usuarios...</div>
+            </div>
+
+            <div class="admin-col">
+              <h3>Crear usuario</h3>
+
+              <label>Usuario</label>
+              <input id="crearUsuario">
+
+              <label>Contraseña</label>
+              <input id="crearPassword" type="password">
+
+              <label>Escuelas (separadas por coma)</label>
+              <input id="crearEscuelas">
+
+              <label>Rol</label>
+              <select id="crearRol">
+                <option value="user">Usuario</option>
+                <option value="admin">Administrador</option>
+              </select>
+
+              <button onclick="adminCrearUsuario()">Crear</button>
+              <div id="crearMensaje" class="mensaje"></div>
+            </div>
+
+            <div class="admin-col">
+              <h3>Editar usuario</h3>
+
+              <label>Usuario</label>
+              <input id="editarUsuario">
+
+              <label>Nueva contraseña</label>
+              <input id="editarPassword" type="password">
+
+              <label>Escuelas (separadas por coma)</label>
+              <input id="editarEscuelas">
+
+              <label>Rol</label>
+              <select id="editarRol">
+                <option value="user">Usuario</option>
+                <option value="admin">Administrador</option>
+              </select>
+
+              <button onclick="guardarCambiosUsuario()">Guardar cambios</button>
+              <div id="editarMensaje" class="mensaje"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADMIN: LOGS -->
+      <section id="vista-admin-logs" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Bitácora de cambios</h2>
+          <div id="tablaLogs">Cargando logs...</div>
+        </div>
+      </section>
+
+      <!-- ADMIN: RESUMEN -->
+      <section id="vista-admin-resumen" class="vista" style="display:none;">
+        <div class="card">
+          <h2>Resumen por escuela</h2>
+          <div id="tablaResumen">Cargando resumen...</div>
+        </div>
+      </section>
     </main>
   </div>
 
