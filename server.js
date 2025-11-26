@@ -241,24 +241,24 @@ function userPuedeAccederEscuela(req, escuela) {
 // -------------------------------
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "login.html"));
+  res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
 app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "login.html"));
+  res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
 app.get("/app", requireLogin, (req, res) => {
-  res.sendFile(path.join(__dirname, "app.html"));
+  res.sendFile(path.join(__dirname, "public", "app.html"));
 });
 
 // CSS y JS
 app.get("/style.css", (req, res) => {
-  res.sendFile(path.join(__dirname, "style.css"));
+  res.sendFile(path.join(__dirname, "public", "style.css"));
 });
 
 app.get("/app.js", (req, res) => {
-  res.sendFile(path.join(__dirname, "app.js"));
+  res.sendFile(path.join(__dirname, "public", "app.js"));
 });
 
 // -------------------------------
