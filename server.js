@@ -1,293 +1,343 @@
-// =============================================================
-// 🟦 IMPORTS Y CONFIGURACIONES INICIALES
-// =============================================================
-import express from "express";
-import session from "express-session";
-import bodyParser from "body-parser";
-import path from "path";
-import { google } from "googleapis";
-import dotenv from "dotenv";
+// ===============================
+// IFARHU PLATFORM - SERVER.JS
+// Auto-Create Sheets + Multi-School Users + Admin Panel
+// ===============================
 
-dotenv.config();
+require("dotenv").config();
+const express = require("express");
+const session = require("express-session");
+const path = require("path");
+const { google } = require("googleapis");
 
-const __dirname = path.resolve();
 const app = express();
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// -------------------------------
+// CONFIG BÁSICO
+// -------------------------------
 
+const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+
+if (!SPREADSHEET_ID) {
+  console.error("❌ Falta GOOGLE_SPREADSHEET_ID en las variables de entorno");
+  process.exit(1);
+}
+
+// Parseo de JSON
+app.use(express.json());
+
+// Sesiones (solo memoria, suficiente para este proyecto)
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "super-secreto",
+    secret: process.env.SESSION_SECRET || "super-secreto-ifarhu",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
   })
 );
 
-app.use(express.static(path.join(__dirname, "public")));
+// -------------------------------
+// GOOGLE SHEETS AUTH
+// -------------------------------
 
-// =============================================================
-// 🟦 GOOGLE AUTH
-// =============================================================
-const auth = new google.auth.JWT(
+const jwtClient = new google.auth.JWT(
   process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   null,
-  process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-  ["https://www.googleapis.com/auth/spreadsheets"],
-  null
+  process.env.GOOGLE_PRIVATE_KEY
+    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    : undefined,
+  ["https://www.googleapis.com/auth/spreadsheets"]
 );
 
-const sheets = google.sheets({ version: "v4", auth });
-const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+const sheets = google.sheets({ version: "v4", auth: jwtClient });
 
-// =============================================================
-// 🟦 FUNCIONES BASE PARA GOOGLE SHEETS
-// =============================================================
+// -------------------------------
+// HELPERS GOOGLE SHEETS
+// -------------------------------
 
-// Obtener lista de hojas existentes
-async function getSheetNames() {
+async function getSpreadsheet() {
   const res = await sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
   });
-  return res.data.sheets.map((s) => s.properties.title);
+  return res.data;
 }
 
-async function ensureSheetWithHeaders(name, headers) {
-  const existentes = await getSheetNames();
+async function sheetExists(title) {
+  const spreadsheet = await getSpreadsheet();
+  return (
+    spreadsheet.sheets &&
+    spreadsheet.sheets.some((s) => s.properties.title === title)
+  );
+}
 
-  // -------------------------------------------------------------------
-  // 🟦 1. Si la hoja NO existe → se crea
-  // -------------------------------------------------------------------
-  if (!existentes.includes(name)) {
-    console.log(`🟦 Creando hoja: ${name}`);
+async function ensureSheetWithHeaders(title, headers) {
+  const exists = await sheetExists(title);
 
+  if (!exists) {
+    console.log(`🟦 Creando hoja: ${title}`);
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [
           {
             addSheet: {
-              properties: { title: name }
-            }
-          }
-        ]
-      }
+              properties: {
+                title,
+              },
+            },
+          },
+        ],
+      },
     });
-
-    // Insertar headers SOLO CUANDO LA HOJA ES NUEVA
-    const lastColumn = String.fromCharCode(65 + headers.length - 1);
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${name}!A1:${lastColumn}1`,
-      valueInputOption: "USER_ENTERED",
+      range: `${title}!A1:${String.fromCharCode(65 + headers.length - 1)}1`,
+      valueInputOption: "RAW",
       requestBody: {
-        values: [headers]
-      }
+        values: [headers],
+      },
     });
-
-    return; // 🟢 evita seguir y no se vuelve a sobrescribir nada
+  } else {
+    // Ajustar / corregir headers de la fila 1 si hace falta
+    console.log(`🟧 Corrigiendo headers de ${title}...`);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${title}!A1:${String.fromCharCode(65 + headers.length - 1)}1`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [headers],
+      },
+    });
   }
-
-  // -------------------------------------------------------------------
-  // 🟦 2. Si la hoja YA EXISTE → NO se crea, NO da error
-  // -------------------------------------------------------------------
-  console.log(`✔ Hoja ${name} existe — no se recrea`);
-
-  // Revisar si los headers ya están
-  const headerCheck = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${name}!A1:Z1`
-  });
-
-  const actuales = headerCheck.data.values?.[0] || [];
-
-  // Si ya están iguales, no hacer nada
-  if (actuales.join("|") === headers.join("|")) {
-    console.log(`✔ Headers de ${name} ya estaban correctos`);
-    return;
-  }
-
-  // Si existen pero están mal, corregirlos
-  const lastColumn = String.fromCharCode(65 + headers.length - 1);
-
-  console.log(`🟧 Corrigiendo headers de ${name}...`);
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${name}!A1:${lastColumn}1`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [headers] }
-  });
 }
 
-// =============================================================
-// 🟦 ASEGURAR HOJA DE USUARIOS
-// =============================================================
+// Hoja de usuarios
 async function ensureUsuariosSheet() {
-  await ensureSheetWithHeaders("usuarios", [
-    "usuario",
-    "password",
-    "rol",
-    "escuelas"
-  ]);
+  const headers = ["Usuario", "Password", "Escuelas", "Rol"];
+  await ensureSheetWithHeaders("usuarios", headers);
 }
 
-// =============================================================
-// 🟦 ASEGURAR HOJA DE LOGS
-// =============================================================
+// Hoja de logs
 async function ensureLogsSheet() {
-  await ensureSheetWithHeaders("logs", [
-    "fecha",
-    "usuario",
-    "accion",
-    "detalle",
-    "ip"
-  ]);
+  const headers = ["FechaHora", "Usuario", "Accion", "Escuela", "Detalle"];
+  await ensureSheetWithHeaders("logs", headers);
 }
 
-// =============================================================
-// 🟦 ASEGURAR HOJA DE ESCUELA DINÁMICA
-// =============================================================
-async function ensureEscuelaSheet(nombre) {
-  await ensureSheetWithHeaders(nombre, [
-    "fecha",
-    "estudiante",
-    "cedula",
-    "telefono",
-    "documento",
-    "nota",
-    "trimestre",
-    "observacion",
-    "subido_por",
-    "filaId"
-  ]);
+// Hoja por escuela (registros)
+async function ensureEscuelaSheet(escuela) {
+  const headers = [
+    "Fecha",
+    "Estudiante",
+    "Cedula",
+    "Telefono",
+    "Documento",
+    "Nota",
+    "Trimestre",
+    "Observacion",
+    "Usuario",
+  ];
+  await ensureSheetWithHeaders(escuela, headers);
 }
 
-// =============================================================
-// 🟦 LOG AUTOMÁTICO
-// =============================================================
-async function registrarLog(usuario, accion, detalle, req) {
-  const fecha = new Date().toLocaleString("es-PA", { timeZone: "America/Panama" });
-  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-
+// Añadir log
+async function addLog(usuario, accion, escuela, detalle) {
+  const fechaHora = new Date().toISOString().replace("T", " ").substring(0, 19);
+  await ensureLogsSheet();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: "logs!A2:E",
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[fecha, usuario, accion, detalle, ip]]
-    }
+      values: [[fechaHora, usuario, accion, escuela || "", detalle || ""]],
+    },
   });
 }
-// =============================================================
-// 🟦 CARGAR USUARIOS
-// =============================================================
-async function getUsers() {
-  await ensureUsuariosSheet();
 
+// -------------------------------
+// USUARIOS
+// -------------------------------
+
+async function getUsersRaw() {
+  await ensureUsuariosSheet();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: "usuarios!A2:D"
+    range: "usuarios!A2:D",
   });
 
-  if (!res.data.values) return [];
+  const rows = res.data.values || [];
+  return rows;
+}
 
-  return res.data.values.map((row) => ({
-    usuario: row[0],
-    password: row[1],
-    rol: row[2],
-    escuelas: row[3] ? row[3].split(",") : []
+async function getUsers() {
+  const rows = await getUsersRaw();
+  return rows.map((r) => ({
+    usuario: r[0],
+    password: r[1],
+    escuelas: r[2] || "",
+    rol: r[3] || "user",
   }));
 }
 
-// =============================================================
-// 🟦 BUSCAR USUARIO
-// =============================================================
-async function findUser(usuario, password) {
-  const users = await getUsers();
-  return users.find((u) => u.usuario === usuario && u.password === password);
+async function findUser(username) {
+  const rows = await getUsersRaw();
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r[0] === username) {
+      return {
+        rowIndex: i + 2, // porque empezamos en A2
+        usuario: r[0],
+        password: r[1],
+        escuelas: r[2] || "",
+        rol: r[3] || "user",
+      };
+    }
+  }
+  return null;
 }
 
-// =============================================================
-// 🟦 LOGIN
-// =============================================================
-app.post("/login", async (req, res) => {
+async function getAllEscuelas() {
+  const users = await getUsers();
+  const set = new Set();
+  users.forEach((u) => {
+    (u.escuelas || "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean)
+      .forEach((e) => set.add(e));
+  });
+  return Array.from(set).sort();
+}
+
+// -------------------------------
+// MIDDLEWARES
+// -------------------------------
+
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.status(401).json({ error: "No autenticado" });
+  }
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session.user || req.session.user.rol !== "admin") {
+    return res.status(403).json({ error: "Solo administradores" });
+  }
+  next();
+}
+
+function userPuedeAccederEscuela(req, escuela) {
+  const user = req.session.user;
+  if (!user) return false;
+  if (user.rol === "admin") return true;
+  const lista = user.escuelas || [];
+  return lista.some(
+    (e) => e.trim().toLowerCase() === String(escuela).trim().toLowerCase()
+  );
+}
+
+// -------------------------------
+// RUTAS ESTÁTICAS (HTML / CSS / JS)
+// -------------------------------
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "login.html"));
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "login.html"));
+});
+
+app.get("/app", requireLogin, (req, res) => {
+  res.sendFile(path.join(__dirname, "app.html"));
+});
+
+// CSS y JS
+app.get("/style.css", (req, res) => {
+  res.sendFile(path.join(__dirname, "style.css"));
+});
+
+app.get("/app.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "app.js"));
+});
+
+// -------------------------------
+// API - AUTENTICACIÓN
+// -------------------------------
+
+app.post("/api/login", async (req, res) => {
   try {
     const { usuario, password } = req.body;
-
-    const user = await findUser(usuario, password);
-
-    if (!user) {
-      return res.json({ ok: false, msg: "Usuario o contraseña incorrectos" });
+    if (!usuario || !password) {
+      return res
+        .status(400)
+        .json({ error: "Debe enviar usuario y contraseña" });
     }
 
-    req.session.user = user;
+    const user = await findUser(usuario);
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
+    }
 
-    res.json({ ok: true, rol: user.rol, escuelas: user.escuelas });
+    const escuelas = user.escuelas
+      ? user.escuelas.split(",").map((e) => e.trim()).filter(Boolean)
+      : [];
 
+    req.session.user = {
+      usuario: user.usuario,
+      rol: user.rol,
+      escuelas,
+    };
+
+    res.json({
+      ok: true,
+      usuario: user.usuario,
+      rol: user.rol,
+      escuelas,
+    });
   } catch (err) {
     console.error("❌ Error en login:", err);
-    res.json({ ok: false, msg: "Error interno" });
+    res.status(500).json({ error: "Error interno en login" });
   }
 });
-// =============================================================
-// 🟦 AÑADIR REGISTRO
-// =============================================================
-app.post("/add", async (req, res) => {
-  try {
-    if (!req.session.user) return res.json({ ok: false });
 
-    const { escuela, estudiante, cedula, telefono, documento, nota, trimestre, observacion } = req.body;
-    const user = req.session.user.usuario;
+app.get("/api/me", requireLogin, (req, res) => {
+  res.json(req.session.user);
+});
 
-    await ensureEscuelaSheet(escuela);
-
-    const fecha = new Date().toLocaleDateString("es-PA");
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${escuela}!A2:J`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[fecha, estudiante, cedula, telefono, documento, nota, trimestre, observacion, user, Date.now()]]
-      }
-    });
-
-    await registrarLog(user, "Agregar registro", `Escuela: ${escuela}, Estudiante: ${estudiante}`, req);
-
+app.post("/api/logout", requireLogin, (req, res) => {
+  req.session.destroy(() => {
     res.json({ ok: true });
+  });
+});
 
+// -------------------------------
+// API - ESCUELAS
+// -------------------------------
+
+app.get("/api/escuelas", requireLogin, async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (user.rol === "admin") {
+      const todas = await getAllEscuelas();
+      return res.json({ escuelas: todas });
+    }
+    return res.json({ escuelas: user.escuelas || [] });
   } catch (err) {
-    console.error("❌ Error ADD:", err);
-    res.json({ ok: false });
+    console.error("❌ Error obteniendo escuelas:", err);
+    res.status(500).json({ error: "Error obteniendo escuelas" });
   }
 });
 
-// =============================================================
-// 🟦 ACTUALIZAR REGISTRO
-// =============================================================
-app.post("/update", async (req, res) => {
+// -------------------------------
+// API - REGISTROS (AGREGAR / LISTAR / BUSCAR / ACTUALIZAR)
+// -------------------------------
+
+// Agregar nuevo registro
+app.post("/api/registros", requireLogin, async (req, res) => {
   try {
-    if (!req.session.user) return res.json({ ok: false });
-
-    const { escuela, filaId, estudiante, cedula, telefono, documento, nota, trimestre, observacion } = req.body;
-
-    await ensureEscuelaSheet(escuela);
-
-    const resDatos = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${escuela}!A2:J`
-    });
-
-    const rows = resDatos.data.values || [];
-
-    const idx = rows.findIndex((r) => r[9] == filaId);
-
-    if (idx === -1) return res.json({ ok: false, msg: "No encontrado" });
-
-    rows[idx] = [
-      rows[idx][0], // fecha original
+    const {
+      escuela,
       estudiante,
       cedula,
       telefono,
@@ -295,67 +345,405 @@ app.post("/update", async (req, res) => {
       nota,
       trimestre,
       observacion,
-      req.session.user.usuario,
-      filaId
-    ];
+    } = req.body;
+
+    if (!escuela || !estudiante || !cedula) {
+      return res
+        .status(400)
+        .json({ error: "Escuela, estudiante y cédula son obligatorios" });
+    }
+
+    if (!userPuedeAccederEscuela(req, escuela)) {
+      return res.status(403).json({ error: "No autorizado para esa escuela" });
+    }
+
+    await ensureEscuelaSheet(escuela);
+
+    const fecha = new Date().toISOString().slice(0, 10);
+    const usuario = req.session.user.usuario;
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${escuela}!A2:I`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [
+          [
+            fecha,
+            estudiante,
+            cedula,
+            telefono || "",
+            documento || "",
+            nota || "",
+            trimestre || "",
+            observacion || "",
+            usuario,
+          ],
+        ],
+      },
+    });
+
+    await addLog(
+      usuario,
+      "Agregar registro",
+      escuela,
+      `Estudiante: ${estudiante}, Cédula: ${cedula}`
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Error agregando registro:", err);
+    res.status(500).json({ error: "Error agregando registro" });
+  }
+});
+
+// Listar registros por escuela
+app.get("/api/registros", requireLogin, async (req, res) => {
+  try {
+    const escuela = req.query.escuela;
+    if (!escuela) {
+      return res.status(400).json({ error: "Falta escuela" });
+    }
+
+    if (!userPuedeAccederEscuela(req, escuela)) {
+      return res.status(403).json({ error: "No autorizado para esa escuela" });
+    }
+
+    await ensureEscuelaSheet(escuela);
+
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${escuela}!A2:I`,
+    });
+
+    const rows = r.data.values || [];
+
+    const registros = rows.map((row, idx) => ({
+      fila: idx + 2,
+      fecha: row[0] || "",
+      estudiante: row[1] || "",
+      cedula: row[2] || "",
+      telefono: row[3] || "",
+      documento: row[4] || "",
+      nota: row[5] || "",
+      trimestre: row[6] || "",
+      observacion: row[7] || "",
+      usuario: row[8] || "",
+    }));
+
+    res.json({ escuela, registros });
+  } catch (err) {
+    console.error("❌ Error cargando registros:", err);
+    res.status(500).json({ error: "Error cargando registros" });
+  }
+});
+
+// Buscar por cédula (Actualización de registro)
+app.get("/api/registros/buscar", requireLogin, async (req, res) => {
+  try {
+    const cedula = (req.query.cedula || "").trim();
+    if (!cedula) {
+      return res.status(400).json({ error: "Debe enviar cédula" });
+    }
+
+    const user = req.session.user;
+    let escuelasBusqueda = [];
+
+    if (user.rol === "admin") {
+      escuelasBusqueda = await getAllEscuelas();
+    } else {
+      escuelasBusqueda = user.escuelas || [];
+    }
+
+    const resultados = [];
+
+    for (const esc of escuelasBusqueda) {
+      if (!esc) continue;
+
+      await ensureEscuelaSheet(esc);
+
+      const r = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${esc}!A2:I`,
+      });
+
+      const rows = r.data.values || [];
+      rows.forEach((row, idx) => {
+        if ((row[2] || "").trim() === cedula) {
+          resultados.push({
+            escuela: esc,
+            fila: idx + 2,
+            fecha: row[0] || "",
+            estudiante: row[1] || "",
+            cedula: row[2] || "",
+            telefono: row[3] || "",
+            documento: row[4] || "",
+            nota: row[5] || "",
+            trimestre: row[6] || "",
+            observacion: row[7] || "",
+            usuario: row[8] || "",
+          });
+        }
+      });
+    }
+
+    res.json({ resultados });
+  } catch (err) {
+    console.error("❌ Error buscando por cédula:", err);
+    res.status(500).json({ error: "Error buscando por cédula" });
+  }
+});
+
+// Actualizar registro
+app.put("/api/registros", requireLogin, async (req, res) => {
+  try {
+    const {
+      escuela,
+      fila,
+      estudiante,
+      cedula,
+      telefono,
+      documento,
+      nota,
+      trimestre,
+      observacion,
+    } = req.body;
+
+    if (!escuela || !fila) {
+      return res
+        .status(400)
+        .json({ error: "Faltan escuela o fila para actualizar" });
+    }
+
+    if (!userPuedeAccederEscuela(req, escuela)) {
+      return res.status(403).json({ error: "No autorizado para esa escuela" });
+    }
+
+    await ensureEscuelaSheet(escuela);
+
+    // Obtener la fila actual para conservar la fecha original
+    const rangeFila = `${escuela}!A${fila}:I${fila}`;
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: rangeFila,
+    });
+
+    const row = (r.data.values && r.data.values[0]) || [];
+    const fecha = row[0] || new Date().toISOString().slice(0, 10);
+    const usuario = req.session.user.usuario;
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${escuela}!A2:J`,
+      range: rangeFila,
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: rows }
+      requestBody: {
+        values: [
+          [
+            fecha,
+            estudiante || "",
+            cedula || "",
+            telefono || "",
+            documento || "",
+            nota || "",
+            trimestre || "",
+            observacion || "",
+            usuario,
+          ],
+        ],
+      },
     });
 
-    await registrarLog(req.session.user.usuario, "Actualizar registro", `Fila ${filaId}`, req);
-
-    res.json({ ok: true });
-
-  } catch (err) {
-    console.error("❌ Error UPDATE:", err);
-    res.json({ ok: false });
-  }
-});
-
-// =============================================================
-// 🟦 ADMIN — LISTA DE ESCUELAS
-// =============================================================
-app.get("/escuelas", async (req, res) => {
-  try {
-    if (!req.session.user || req.session.user.rol !== "admin")
-      return res.json({ ok: false });
-
-    const sheetsList = await getSheetNames();
-
-    const filtradas = sheetsList.filter(
-      (s) => s !== "usuarios" && s !== "logs"
+    await addLog(
+      usuario,
+      "Actualizar registro",
+      escuela,
+      `Fila ${fila}, Cédula: ${cedula || row[2] || ""}`
     );
 
-    res.json({ ok: true, escuelas: filtradas });
-
+    res.json({ ok: true });
   } catch (err) {
-    console.error("❌ Error escuelas:", err);
-    res.json({ ok: false });
+    console.error("❌ Error actualizando registro:", err);
+    res.status(500).json({ error: "Error actualizando registro" });
   }
 });
-// =============================================================
-// 🟦 LOGOUT
-// =============================================================
-app.get("/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.redirect("/login.html");
-  });
+
+// -------------------------------
+// API ADMIN - USUARIOS
+// -------------------------------
+
+app.get("/api/admin/usuarios", requireAdmin, async (req, res) => {
+  try {
+    const users = await getUsers();
+    res.json({ usuarios: users });
+  } catch (err) {
+    console.error("❌ Error obteniendo usuarios:", err);
+    res.status(500).json({ error: "Error obteniendo usuarios" });
+  }
 });
 
-// =============================================================
-// 🟦 INICIAR Y VERIFICAR HOJAS
-// =============================================================
-async function iniciar() {
+app.post("/api/admin/usuarios", requireAdmin, async (req, res) => {
+  try {
+    const { usuario, password, escuelas, rol } = req.body;
+
+    if (!usuario || !password) {
+      return res
+        .status(400)
+        .json({ error: "Usuario y contraseña son obligatorios" });
+    }
+
+    const existente = await findUser(usuario);
+    if (existente) {
+      return res.status(400).json({ error: "Ese usuario ya existe" });
+    }
+
+    await ensureUsuariosSheet();
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "usuarios!A2:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[usuario, password, escuelas || "", rol || "user"]],
+      },
+    });
+
+    await addLog(
+      req.session.user.usuario,
+      "Crear usuario",
+      "",
+      `Usuario: ${usuario}`
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Error creando usuario:", err);
+    res.status(500).json({ error: "Error creando usuario" });
+  }
+});
+
+app.put("/api/admin/usuarios/:usuario", requireAdmin, async (req, res) => {
+  try {
+    const username = req.params.usuario;
+    const { password, escuelas, rol } = req.body;
+
+    const user = await findUser(username);
+    if (!user) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    const fila = user.rowIndex;
+    const range = `usuarios!A${fila}:D${fila}`;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[username, password || user.password, escuelas || "", rol || user.rol]],
+      },
+    });
+
+    await addLog(
+      req.session.user.usuario,
+      "Editar usuario",
+      "",
+      `Usuario: ${username}`
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Error editando usuario:", err);
+    res.status(500).json({ error: "Error editando usuario" });
+  }
+});
+
+// -------------------------------
+// API ADMIN - LOGS Y RESUMEN
+// -------------------------------
+
+app.get("/api/admin/logs", requireAdmin, async (req, res) => {
+  try {
+    await ensureLogsSheet();
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "logs!A2:E",
+    });
+
+    const rows = r.data.values || [];
+    const logs = rows.map((row) => ({
+      fechaHora: row[0] || "",
+      usuario: row[1] || "",
+      accion: row[2] || "",
+      escuela: row[3] || "",
+      detalle: row[4] || "",
+    }));
+
+    // Si se pasa ?limit=100, cortar
+    const limit = parseInt(req.query.limit || "200", 10);
+    res.json({ logs: logs.slice(-limit).reverse() });
+  } catch (err) {
+    console.error("❌ Error obteniendo logs:", err);
+    res.status(500).json({ error: "Error obteniendo logs" });
+  }
+});
+
+// Resumen simple: cantidad de registros por escuela
+app.get("/api/admin/resumen", requireAdmin, async (req, res) => {
+  try {
+    const escuelas = await getAllEscuelas();
+    const resumen = [];
+
+    for (const esc of escuelas) {
+      if (!esc) continue;
+      try {
+        await ensureEscuelaSheet(esc);
+        const r = await sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${esc}!A2:I`,
+        });
+        const rows = r.data.values || [];
+        resumen.push({ escuela: esc, total: rows.length });
+      } catch (e) {
+        console.error("Error leyendo escuela", esc, e.message);
+      }
+    }
+
+    res.json({ resumen });
+  } catch (err) {
+    console.error("❌ Error en resumen:", err);
+    res.status(500).json({ error: "Error obteniendo resumen" });
+  }
+});
+
+// -------------------------------
+// MANEJO ERRORES GENERALES
+// -------------------------------
+
+app.use((err, req, res, next) => {
+  console.error("🔥 Error general:", err);
+  res.status(500).json({ error: "Error interno del servidor" });
+});
+
+// -------------------------------
+// INICIAR SERVIDOR
+// -------------------------------
+
+const PORT = process.env.PORT || 3000;
+
+jwtClient.authorize(async (err) => {
+  if (err) {
+    console.error("❌ Error autenticando con Google:", err);
+    process.exit(1);
+  }
   console.log("🚀 Verificando hojas principales...");
   await ensureUsuariosSheet();
   await ensureLogsSheet();
-}
+  console.log("🟢 Conectado a Google Sheets");
 
-iniciar().then(() => {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`🟢 Servidor en puerto ${PORT}`));
+  app.listen(PORT, () => {
+    console.log("=====================================");
+    console.log("  IFARHU Plataforma corriendo");
+    console.log("  Puerto:", PORT);
+    console.log("=====================================");
+  });
 });
