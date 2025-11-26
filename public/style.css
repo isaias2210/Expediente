@@ -68,13 +68,13 @@ aside {
   margin-bottom: 6px;
   border-radius: 4px;
   border: 1px solid #ccd3dd;
-  background: #0000ff;
+  background: #003c71;
   cursor: pointer;
   font-size: 14px;
 }
 
 .menu-btn:hover {
-  background: #e3e8f0;
+  background: #00284c;
 }
 
 .menu-admin-title {
