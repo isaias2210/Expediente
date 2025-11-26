@@ -52,12 +52,15 @@ async function getSheetNames() {
   return res.data.sheets.map((s) => s.properties.title);
 }
 
-// Crear hoja solo si no existe + headers
 async function ensureSheetWithHeaders(name, headers) {
   const existentes = await getSheetNames();
 
+  // -------------------------------------------------------------------
+  // 🟦 1. Si la hoja NO existe → se crea
+  // -------------------------------------------------------------------
   if (!existentes.includes(name)) {
     console.log(`🟦 Creando hoja: ${name}`);
+
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -70,12 +73,46 @@ async function ensureSheetWithHeaders(name, headers) {
         ]
       }
     });
-  } else {
-    console.log(`✔ Hoja ${name} ya existe`);
+
+    // Insertar headers SOLO CUANDO LA HOJA ES NUEVA
+    const lastColumn = String.fromCharCode(65 + headers.length - 1);
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${name}!A1:${lastColumn}1`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [headers]
+      }
+    });
+
+    return; // 🟢 evita seguir y no se vuelve a sobrescribir nada
   }
 
-  // Insertar headers
+  // -------------------------------------------------------------------
+  // 🟦 2. Si la hoja YA EXISTE → NO se crea, NO da error
+  // -------------------------------------------------------------------
+  console.log(`✔ Hoja ${name} existe — no se recrea`);
+
+  // Revisar si los headers ya están
+  const headerCheck = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${name}!A1:Z1`
+  });
+
+  const actuales = headerCheck.data.values?.[0] || [];
+
+  // Si ya están iguales, no hacer nada
+  if (actuales.join("|") === headers.join("|")) {
+    console.log(`✔ Headers de ${name} ya estaban correctos`);
+    return;
+  }
+
+  // Si existen pero están mal, corregirlos
   const lastColumn = String.fromCharCode(65 + headers.length - 1);
+
+  console.log(`🟧 Corrigiendo headers de ${name}...`);
+
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${name}!A1:${lastColumn}1`,
@@ -83,6 +120,7 @@ async function ensureSheetWithHeaders(name, headers) {
     requestBody: { values: [headers] }
   });
 }
+
 // =============================================================
 // 🟦 ASEGURAR HOJA DE USUARIOS
 // =============================================================
