@@ -1,18 +1,15 @@
 {
   "name": "expediente-ifarhu",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Plataforma sencilla de expedientes IFARHU con Google Sheets",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "express-session": "^1.17.3",
-    "googleapis": "^105.0.0",
-    "body-parser": "^1.20.2",
-    "path-to-regexp": "^6.2.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
+    "googleapis": "^105.0.0"
   }
 }
