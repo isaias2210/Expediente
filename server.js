@@ -153,14 +153,17 @@ async function ensureEscuelaSheet(escuela) {
 
 // Añadir log
 async function addLog(usuario, accion, escuela, detalle) {
-  const fechaHora = new Date().toISOString().replace("T", " ").substring(0, 19);
+  const fechaPanama = new Date().toLocaleString("es-PA", {
+    timeZone: "America/Panama",
+    hour12: false
+});
   await ensureLogsSheet();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: "logs!A2:E",
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[fechaHora, usuario, accion, escuela || "", detalle || ""]],
+      values: [[fechaPanama, usuario, accion, escuela || "", detalle || ""]],
     },
   });
 }
