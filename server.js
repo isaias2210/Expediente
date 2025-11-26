@@ -52,6 +52,7 @@ const sheets = google.sheets({ version: "v4", auth: jwtClient });
 // -------------------------------
 // HELPERS GOOGLE SHEETS
 // -------------------------------
+
 async function getSpreadsheet() {
   const res = await sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -108,6 +109,18 @@ async function ensureSheetWithHeaders(title, headers) {
       },
     });
   }
+}
+
+// Normaliza campos booleanos/checkbox a "Si"/"No" o "" si no hay valor
+function normalizeBooleanFieldToSiNo(val) {
+  if (val === undefined || val === null || val === "") return "";
+  if (typeof val === "boolean") return val ? "Si" : "No";
+  // Convertir a string y comparar en minúsculas
+  const s = String(val).trim().toLowerCase();
+  if (s === "1" || s === "true" || s === "si" || s === "sí" || s === "s") return "Si";
+  if (s === "0" || s === "false" || s === "no" || s === "n") return "No";
+  // Si no es reconocible como booleano, devolver original (por ejemplo "DocumentoX")
+  return String(val);
 }
 
 // Hoja de usuarios
@@ -361,6 +374,8 @@ app.post("/api/registros", requireLogin, async (req, res) => {
     const fecha = new Date().toISOString().slice(0, 10);
     const usuario = req.session.user.usuario;
 
+    const documentoVal = normalizeBooleanFieldToSiNo(documento);
+
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: `${escuela}!A2:I`,
@@ -372,7 +387,7 @@ app.post("/api/registros", requireLogin, async (req, res) => {
             estudiante,
             cedula,
             telefono || "",
-            documento || "",
+            documentoVal,
             nota || "",
             trimestre || "",
             observacion || "",
@@ -531,6 +546,12 @@ app.put("/api/registros", requireLogin, async (req, res) => {
     const fecha = row[0] || new Date().toISOString().slice(0, 10);
     const usuario = req.session.user.usuario;
 
+    // Si se envió "documento" lo normalizamos; si no, usamos el valor actual de la hoja
+    const documentoVal =
+      typeof documento !== "undefined" && documento !== null
+        ? normalizeBooleanFieldToSiNo(documento)
+        : row[4] || "";
+
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: rangeFila,
@@ -542,7 +563,7 @@ app.put("/api/registros", requireLogin, async (req, res) => {
             estudiante || "",
             cedula || "",
             telefono || "",
-            documento || "",
+            documentoVal,
             nota || "",
             trimestre || "",
             observacion || "",
