@@ -52,8 +52,6 @@ const sheets = google.sheets({ version: "v4", auth: jwtClient });
 // -------------------------------
 // HELPERS GOOGLE SHEETS
 // -------------------------------
-const documento = req.body.documento === "si" ? "SI" : "NO";
-
 async function getSpreadsheet() {
   const res = await sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
