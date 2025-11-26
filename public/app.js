@@ -1,441 +1,634 @@
-// ===============================================
-// 🔵 VARIABLES GLOBALES
-// ===============================================
+// ===========================
+//   VARIABLES GLOBALES
+// ===========================
+
 let usuarioActual = null;
-let escuelasDisponibles = [];
-let registrosCache = [];   // Para actualización rápida
+let edicionActual = null; // { escuela, fila }
 
-// ===============================================
-// 🔵 CAMBIAR ENTRE SECCIONES
-// ===============================================
-document.querySelectorAll(".menu-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const target = btn.dataset.target;
+// ===========================
+//   CAMBIO DE VISTAS
+// ===========================
 
-    document.querySelectorAll(".section").forEach(sec =>
-      sec.classList.remove("active")
-    );
+function ocultarTodasLasVistas() {
+  document.querySelectorAll(".vista").forEach((v) => (v.style.display = "none"));
+}
 
-    document.getElementById(target).classList.add("active");
+function mostrarVista(nombre) {
+  ocultarTodasLasVistas();
+  const id = `vista-${nombre}`;
+  const el = document.getElementById(id);
+  if (el) el.style.display = "block";
+
+  // Si entra a vistas admin, recargar data
+  if (nombre === "admin-usuarios") {
+    adminCargarUsuarios();
+  } else if (nombre === "admin-logs") {
+    adminCargarLogs();
+  } else if (nombre === "admin-resumen") {
+    adminCargarResumen();
+  }
+}
+
+// ===========================
+//   CARGA INICIAL
+// ===========================
+
+async function cargarUsuarioYEscuelas() {
+  try {
+    const res = await fetch("/api/me");
+    if (!res.ok) {
+      window.location.href = "/login";
+      return;
+    }
+    const data = await res.json();
+    usuarioActual = data;
+
+    document.getElementById("txtUsuario").textContent =
+      `Usuario: ${data.usuario} (${data.rol})`;
+
+    if (data.rol === "admin") {
+      document.getElementById("menuAdmin").style.display = "block";
+    }
+
+    await cargarEscuelasSelects();
+  } catch (e) {
+    console.error(e);
+    alert("Error cargando datos del usuario.");
+  }
+}
+
+async function cargarEscuelasSelects() {
+  const res = await fetch("/api/escuelas");
+  const data = await res.json();
+  const escuelas = data.escuelas || [];
+
+  const selLista = document.getElementById("selectEscuelaLista");
+  const selAgregar = document.getElementById("selectEscuelaAgregar");
+
+  [selLista, selAgregar].forEach((sel) => {
+    sel.innerHTML = "";
+    if (!escuelas.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "No hay escuelas asignadas";
+      sel.appendChild(opt);
+      sel.disabled = true;
+    } else {
+      escuelas.forEach((esc) => {
+        const opt = document.createElement("option");
+        opt.value = esc;
+        opt.textContent = esc;
+        sel.appendChild(opt);
+      });
+      sel.disabled = false;
+    }
   });
-});
+}
 
-// ===============================================
-// 🔵 CARGAR USUARIO ACTUAL
-// ===============================================
-async function cargarUsuario() {
-  const res = await fetch("/api/me");
-  if (!res.ok) {
-    window.location = "/login.html";
+// ===========================
+//       LOGOUT
+// ===========================
+
+async function logout() {
+  try {
+    await fetch("/api/logout", { method: "POST" });
+  } catch (e) {
+    console.error(e);
+  }
+  location.href = "/login";
+}
+
+// ===========================
+//   VER REGISTROS POR ESCUELA
+// ===========================
+
+async function cargarRegistros() {
+  const escuela = document.getElementById("selectEscuelaLista").value;
+  const contenedor = document.getElementById("tablaRegistros");
+  contenedor.textContent = "Cargando registros...";
+
+  if (!escuela) {
+    contenedor.textContent = "Debe seleccionar una escuela.";
     return;
   }
 
-  usuarioActual = await res.json();
+  try {
+    const res = await fetch(`/api/registros?escuela=${encodeURIComponent(escuela)}`);
+    const data = await res.json();
 
-  if (usuarioActual.rol === "admin") {
-    document.querySelectorAll(".admin-only").forEach(x => x.style.display = "block");
-  } else {
-    document.querySelectorAll(".admin-only").forEach(x => x.style.display = "none");
-  }
+    if (!res.ok) {
+      contenedor.textContent = data.error || "Error al cargar registros.";
+      return;
+    }
 
-  cargarEscuelasUsuario();
-  cargarEscuelasVer();
-  cargarLogsUsuario();
+    if (!data.registros || !data.registros.length) {
+      contenedor.textContent = "No hay registros para esta escuela.";
+      return;
+    }
 
-  if (usuarioActual.rol === "admin") {
-    cargarUsuariosAdmin();
-    cargarEscuelasAdmin();
-    cargarLogsAdmin();
-  }
-}
-
-cargarUsuario();
-
-// ===============================================
-// 🔵 CERRAR SESIÓN
-// ===============================================
-document.getElementById("logoutBtn").addEventListener("click", async () => {
-  await fetch("/api/logout", { method: "POST" });
-  window.location = "/login.html";
-});
-// ========================================================
-// 🔷 CARGAR ESCUELAS ASIGNADAS AL USUARIO
-// ========================================================
-async function cargarEscuelasUsuario() {
-  const sel = document.getElementById("escuelaSelect");
-  sel.innerHTML = "";
-
-  usuarioActual.escuelas.forEach(e => {
-    const op = document.createElement("option");
-    op.value = e;
-    op.textContent = e;
-    sel.appendChild(op);
-  });
-}
-
-async function cargarEscuelasVer() {
-  const sel = document.getElementById("selectVerEscuela");
-  sel.innerHTML = "";
-
-  usuarioActual.escuelas.forEach(e => {
-    const op = document.createElement("option");
-    op.value = e;
-    op.textContent = e;
-    sel.appendChild(op);
-  });
-
-  sel.addEventListener("change", cargarRegistrosEscuela);
-}
-
-// ========================================================
-// 🔷 AGREGAR REGISTRO
-// ========================================================
-document.getElementById("btnAgregar").addEventListener("click", async () => {
-  const data = {
-    escuela: document.getElementById("escuelaSelect").value,
-    estudiante: document.getElementById("estudiante").value.trim(),
-    cedula: document.getElementById("cedula").value.trim(),
-    telefono: document.getElementById("telefono").value.trim(),
-    documento: document.getElementById("documento").value,
-    trimestre: document.getElementById("trimestre").value,
-    nota: document.getElementById("nota").value,
-    observacion: document.getElementById("observacion").value,
-  };
-
-  if (!data.estudiante || !data.cedula) {
-    alert("Debe ingresar estudiante y cédula.");
-    return;
-  }
-
-  const res = await fetch("/api/agregar", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-
-  const r = await res.json();
-  if (r.ok) {
-    alert("Registro agregado correctamente.");
-    cargarRegistrosEscuela();
-  } else {
-    alert("Error al agregar registro.");
-  }
-});
-// ========================================================
-// 🔷 CARGAR REGISTROS DE UNA ESCUELA
-// ========================================================
-async function cargarRegistrosEscuela() {
-  const escuela = document.getElementById("selectVerEscuela").value;
-
-  const res = await fetch("/api/registros?escuela=" + escuela);
-  const registros = await res.json();
-
-  registrosCache = registros;
-
-  const tbody = document.querySelector("#tablaRegistros tbody");
-  tbody.innerHTML = "";
-
-  registros.forEach(r => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r.fecha}</td>
-      <td>${r.estudiante}</td>
-      <td>${r.cedula}</td>
-      <td>${r.documento}</td>
-      <td>${r.trimestre}</td>
-      <td>${r.nota}</td>
-      <td>${r.observacion}</td>
-      <td>${r.subido_por}</td>
+    const tabla = document.createElement("table");
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr>
+        <th>Fecha</th>
+        <th>Estudiante</th>
+        <th>Cédula</th>
+        <th>Teléfono</th>
+        <th>Documento</th>
+        <th>Nota</th>
+        <th>Trimestre</th>
+        <th>Observación</th>
+        <th>Usuario</th>
+      </tr>
     `;
-    tbody.appendChild(tr);
-  });
-}
+    tabla.appendChild(thead);
 
-// ========================================================
-// 🔷 BUSCAR POR CÉDULA PARA ACTUALIZAR
-// ========================================================
-document.getElementById("btnBuscarCedula").addEventListener("click", () => {
-  const ced = document.getElementById("buscarCedula").value.trim();
-
-  const resultados = registrosCache.filter(r => r.cedula === ced);
-
-  const tbody = document.querySelector("#tablaActualizar tbody");
-  tbody.innerHTML = "";
-
-  resultados.forEach(r => {
-    const tr = document.createElement("tr");
-
-    tr.innerHTML = `
-      <td>${r.estudiante}</td>
-      <td>${r.cedula}</td>
-      <td>${r.trimestre}</td>
-      <td>${r.nota}</td>
-      <td>
-        <button class="editar-btn" data-id="${r.filaId}" data-escuela="${r.escuela}">
-          ✏️
-        </button>
-      </td>
-    `;
-
-    tbody.appendChild(tr);
-  });
-
-  // Activar eventos de edición
-  document.querySelectorAll(".editar-btn").forEach(btn => {
-    btn.addEventListener("click", editarRegistro);
-  });
-});
-
-// ========================================================
-// 🔷 ABRIR POPUP DE EDICIÓN
-// ========================================================
-function editarRegistro(e) {
-  const filaId = e.target.dataset.id;
-  const escuela = e.target.dataset.escuela;
-
-  const reg = registrosCache.find(r => r.filaId === filaId);
-
-  const nuevaNota = prompt("Nueva nota:", reg.nota);
-  if (nuevaNota === null) return;
-
-  const nuevoTrimestre = prompt("Nuevo trimestre:", reg.trimestre);
-  if (nuevoTrimestre === null) return;
-
-  actualizarRegistro(escuela, filaId, nuevaNota, nuevoTrimestre);
-}
-
-// ========================================================
-// 🔷 ENVIAR ACTUALIZACIÓN AL SERVIDOR
-// ========================================================
-async function actualizarRegistro(escuela, filaId, nota, trimestre) {
-  const res = await fetch("/api/actualizar", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ escuela, filaId, nota, trimestre }),
-  });
-
-  const r = await res.json();
-  if (r.ok) {
-    alert("Registro actualizado.");
-    cargarRegistrosEscuela();
-  } else {
-    alert("Error actualizando registro.");
-  }
-}
-// ========================================================
-// 🔷 ADMIN: CARGAR USUARIOS
-// ========================================================
-async function cargarUsuariosAdmin() {
-  const res = await fetch("/api/admin/usuarios");
-  const usuarios = await res.json();
-
-  const tabla = document.getElementById("tablaUsuarios");
-  tabla.innerHTML = `
-    <tr><th>Usuario</th><th>Rol</th><th>Escuelas</th></tr>
-  `;
-
-  usuarios.forEach(u => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${u.usuario}</td>
-      <td>${u.rol}</td>
-      <td>${u.escuelas}</td>
-    `;
-    tabla.appendChild(tr);
-  });
-}
-
-// ========================================================
-// 🔷 ADMIN: CREAR USUARIO
-// ========================================================
-document.getElementById("btnCrearUsuario").addEventListener("click", async () => {
-  const data = {
-    usuario: document.getElementById("nuevoUsuario").value.trim(),
-    password: document.getElementById("nuevoPassword").value.trim(),
-    rol: document.getElementById("nuevoRol").value,
-    escuelas: document.getElementById("nuevoEscuelas").value,
-  };
-
-  const res = await fetch("/api/admin/crearUsuario", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-
-  const r = await res.json();
-  if (r.ok) {
-    alert("Usuario creado.");
-    cargarUsuariosAdmin();
-  } else {
-    alert("Error creando usuario.");
-  }
-});
-
-// ========================================================
-// 🔷 ADMIN: ESCUELAS
-// ========================================================
-async function cargarEscuelasAdmin() {
-  const res = await fetch("/api/admin/escuelas");
-  const escuelas = await res.json();
-
-  const tabla = document.getElementById("tablaEscuelas");
-  tabla.innerHTML = `
-    <tr><th>Escuela</th></tr>
-  `;
-
-  escuelas.forEach(e => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${e}</td>`;
-    tabla.appendChild(tr);
-  });
-}
-
-document.getElementById("btnCrearEscuela").addEventListener("click", async () => {
-  const escuela = document.getElementById("nuevaEscuela").value.trim();
-
-  const res = await fetch("/api/admin/crearEscuela", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ escuela }),
-  });
-
-  const r = await res.json();
-  if (r.ok) {
-    alert("Escuela creada.");
-    cargarEscuelasAdmin();
-  } else {
-    alert("Error creando escuela.");
-  }
-});
-
-// ========================================================
-// 🔷 ADMIN: LOGS COMPLETOS
-// ========================================================
-async function cargarLogsAdmin() {
-  const res = await fetch("/api/admin/logs");
-  const logs = await res.json();
-
-  const tbody = document.querySelector("#tablaLogs tbody");
-  tbody.innerHTML = "";
-
-  logs.forEach(l => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${l.fecha}</td>
-      <td>${l.usuario}</td>
-      <td>${l.accion}</td>
-      <td>${l.detalles}</td>
-      <td>${l.ip}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-// ========================================================
-// 🔷 LOGS DEL USUARIO ACTUAL
-// ========================================================
-async function cargarLogsUsuario() {
-  const res = await fetch("/api/misLogs");
-  const logs = await res.json();
-
-  const tbody = document.querySelector("#tablaMisLogs tbody");
-  tbody.innerHTML = "";
-
-  logs.forEach(l => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${l.fecha}</td>
-      <td>${l.accion}</td>
-      <td>${l.detalles}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-// =============================================================
-// 🔵 OBTENER LISTA DE HOJAS EXISTENTES
-// =============================================================
-async function getSheetNames() {
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId: SPREADSHEET_ID,
-  });
-
-  return meta.data.sheets.map(s => s.properties.title);
-}
-
-// =============================================================
-// 🔵 CREAR HOJA SOLO SI NO EXISTE + AGREGAR HEADERS
-// =============================================================
-async function ensureSheetWithHeaders(name, headers) {
-  const existentes = await getSheetNames();
-
-  // --- Si NO existe → crearla ---
-  if (!existentes.includes(name)) {
-    console.log(`🟦 Creando hoja: ${name}`);
-
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        requests: [
-          {
-            addSheet: {
-              properties: { title: name }
-            }
-          }
-        ],
-      },
+    const tbody = document.createElement("tbody");
+    data.registros.forEach((reg) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${reg.fecha}</td>
+        <td>${reg.estudiante}</td>
+        <td>${reg.cedula}</td>
+        <td>${reg.telefono}</td>
+        <td>${reg.documento}</td>
+        <td>${reg.nota}</td>
+        <td>${reg.trimestre}</td>
+        <td>${reg.observacion}</td>
+        <td>${reg.usuario}</td>
+      `;
+      tbody.appendChild(tr);
     });
-  } else {
-    console.log(`✔ Hoja ${name} ya existe, no se crea`);
+    tabla.appendChild(tbody);
+    contenedor.innerHTML = "";
+    contenedor.appendChild(tabla);
+  } catch (e) {
+    console.error(e);
+    contenedor.textContent = "Error al conectar con el servidor.";
+  }
+}
+
+// ===========================
+//   AGREGAR REGISTRO
+// ===========================
+
+async function agregarRegistro() {
+  const escuela = document.getElementById("selectEscuelaAgregar").value;
+  const estudiante = document.getElementById("estudiante").value.trim();
+  const cedula = document.getElementById("cedula").value.trim();
+  const telefono = document.getElementById("telefono").value.trim();
+  const documento = document.getElementById("documento_entregado").value;
+  const nota = document.getElementById("nota").value.trim();
+  const trimestre = document.getElementById("trimestre").value;
+  const observacion = document.getElementById("observacion").value.trim();
+  const mensaje = document.getElementById("mensajeAgregar");
+
+  mensaje.textContent = "";
+
+  if (!escuela || !estudiante || !cedula) {
+    mensaje.textContent = "Escuela, estudiante y cédula son obligatorios.";
+    return;
   }
 
-  // --- Colocar encabezados SIEMPRE ---
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${name}!A1:${String.fromCharCode(65 + headers.length - 1)}1`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [headers] }
-  });
+  try {
+    const res = await fetch("/api/registros", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        escuela,
+        estudiante,
+        cedula,
+        telefono,
+        documento,
+        nota,
+        trimestre,
+        observacion,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      mensaje.textContent = data.error || "Error agregando registro.";
+      return;
+    }
+
+    mensaje.textContent = "Registro guardado correctamente.";
+    // Limpiar formulario
+    document.getElementById("estudiante").value = "";
+    document.getElementById("cedula").value = "";
+    document.getElementById("telefono").value = "";
+    document.getElementById("nota").value = "";
+    document.getElementById("observacion").value = "";
+  } catch (e) {
+    console.error(e);
+    mensaje.textContent = "Error de conexión.";
+  }
 }
 
-// =============================================================
-// 🔵 HOJA DE USUARIOS
-// =============================================================
-async function ensureUsuariosSheet() {
-  await ensureSheetWithHeaders("usuarios", [
-    "usuario",
-    "password",
-    "rol",
-    "escuelas"
-  ]);
+// ===========================
+//   BUSCAR POR CÉDULA
+// ===========================
+
+async function buscarPorCedula() {
+  const cedula = document.getElementById("buscarCedula").value.trim();
+  const contenedor = document.getElementById("tablaBusqueda");
+  const mensaje = document.getElementById("mensajeBuscar");
+
+  mensaje.textContent = "";
+  contenedor.textContent = "";
+
+  if (!cedula) {
+    mensaje.textContent = "Debe escribir una cédula.";
+    return;
+  }
+
+  contenedor.textContent = "Buscando...";
+
+  try {
+    const res = await fetch(`/api/registros/buscar?cedula=${encodeURIComponent(cedula)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      contenedor.textContent = data.error || "Error en la búsqueda.";
+      return;
+    }
+
+    const resultados = data.resultados || [];
+    if (!resultados.length) {
+      contenedor.textContent = "No se encontraron registros con esa cédula.";
+      return;
+    }
+
+    const tabla = document.createElement("table");
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr>
+        <th>Escuela</th>
+        <th>Estudiante</th>
+        <th>Cédula</th>
+        <th>Trimestre</th>
+        <th>Documento</th>
+        <th>Nota</th>
+        <th>Acción</th>
+      </tr>
+    `;
+    tabla.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    resultados.forEach((reg, idx) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${reg.escuela}</td>
+        <td>${reg.estudiante}</td>
+        <td>${reg.cedula}</td>
+        <td>${reg.trimestre}</td>
+        <td>${reg.documento}</td>
+        <td>${reg.nota}</td>
+        <td>
+          <button class="icon-btn" title="Editar" onclick="abrirEdicion(${idx})">✏️</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tabla.appendChild(tbody);
+    contenedor.innerHTML = "";
+    contenedor.appendChild(tabla);
+
+    // Guardamos los resultados en memoria para poder editar
+    window._resultadosBusqueda = resultados;
+    document.getElementById("cardEdicion").style.display = "none";
+  } catch (e) {
+    console.error(e);
+    contenedor.textContent = "Error al conectar con el servidor.";
+  }
 }
 
-// =============================================================
-// 🔵 HOJA DE LOGS
-// =============================================================
-async function ensureLogsSheet() {
-  await ensureSheetWithHeaders("logs", [
-    "fecha",
-    "usuario",
-    "accion",
-    "detalles",
-    "ip"
-  ]);
+function abrirEdicion(idx) {
+  const resultados = window._resultadosBusqueda || [];
+  const reg = resultados[idx];
+  if (!reg) return;
+
+  edicionActual = { escuela: reg.escuela, fila: reg.fila };
+
+  document.getElementById("infoEdicion").textContent =
+    `Editando registro de la escuela ${reg.escuela}, fila ${reg.fila}`;
+
+  document.getElementById("editEstudiante").value = reg.estudiante;
+  document.getElementById("editCedula").value = reg.cedula;
+  document.getElementById("editTelefono").value = reg.telefono;
+  document.getElementById("editDocumento").value = reg.documento === "1" || reg.documento === "Sí" ? "1" : "0";
+  document.getElementById("editNota").value = reg.nota;
+  document.getElementById("editTrimestre").value = reg.trimestre || "Primer trimestre";
+  document.getElementById("editObservacion").value = reg.observacion;
+
+  document.getElementById("cardEdicion").style.display = "block";
+  document.getElementById("mensajeEdicion").textContent = "";
 }
 
-// =============================================================
-// 🔵 HOJA POR ESCUELA
-// =============================================================
-async function ensureEscuelaSheet(nombre) {
-  await ensureSheetWithHeaders(nombre, [
-    "fecha",
-    "estudiante",
-    "cedula",
-    "telefono",
-    "documento",
-    "nota",
-    "trimestre",
-    "observacion",
-    "subido_por",
-    "filaId"
-  ]);
+async function guardarEdicion() {
+  const mensaje = document.getElementById("mensajeEdicion");
+  mensaje.textContent = "";
+
+  if (!edicionActual) {
+    mensaje.textContent = "No hay registro seleccionado.";
+    return;
+  }
+
+  const estudiante = document.getElementById("editEstudiante").value.trim();
+  const cedula = document.getElementById("editCedula").value.trim();
+  const telefono = document.getElementById("editTelefono").value.trim();
+  const documento = document.getElementById("editDocumento").value;
+  const nota = document.getElementById("editNota").value.trim();
+  const trimestre = document.getElementById("editTrimestre").value;
+  const observacion = document.getElementById("editObservacion").value.trim();
+
+  if (!estudiante || !cedula) {
+    mensaje.textContent = "Estudiante y cédula son obligatorios.";
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/registros", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        escuela: edicionActual.escuela,
+        fila: edicionActual.fila,
+        estudiante,
+        cedula,
+        telefono,
+        documento,
+        nota,
+        trimestre,
+        observacion,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      mensaje.textContent = data.error || "Error actualizando registro.";
+      return;
+    }
+
+    mensaje.textContent = "Registro actualizado correctamente.";
+  } catch (e) {
+    console.error(e);
+    mensaje.textContent = "Error de conexión.";
+  }
 }
+
+// ===========================
+//   ADMIN - USUARIOS
+// ===========================
+
+async function adminCargarUsuarios() {
+  const cont = document.getElementById("listaUsuarios");
+  cont.textContent = "Cargando usuarios...";
+
+  try {
+    const res = await fetch("/api/admin/usuarios");
+    const data = await res.json();
+    if (!res.ok) {
+      cont.textContent = data.error || "Error cargando usuarios.";
+      return;
+    }
+
+    const usuarios = data.usuarios || [];
+    if (!usuarios.length) {
+      cont.textContent = "No hay usuarios registrados.";
+      return;
+    }
+
+    const tabla = document.createElement("table");
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr>
+        <th>Usuario</th>
+        <th>Escuelas</th>
+        <th>Rol</th>
+      </tr>
+    `;
+    tabla.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    usuarios.forEach((u) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${u.usuario}</td>
+        <td>${u.escuelas || ""}</td>
+        <td>${u.rol === "admin" ? '<span class="badge-admin">Admin</span>' : "Usuario"}</td>
+      `;
+      tr.onclick = () => {
+        document.getElementById("editarUsuario").value = u.usuario;
+        document.getElementById("editarEscuelas").value = u.escuelas || "";
+        document.getElementById("editarRol").value = u.rol || "user";
+        document.getElementById("editarPassword").value = "";
+      };
+      tbody.appendChild(tr);
+    });
+    tabla.appendChild(tbody);
+
+    cont.innerHTML = "";
+    cont.appendChild(tabla);
+  } catch (e) {
+    console.error(e);
+    cont.textContent = "Error de conexión.";
+  }
+}
+
+async function adminCrearUsuario() {
+  const usuario = document.getElementById("crearUsuario").value.trim();
+  const password = document.getElementById("crearPassword").value.trim();
+  const escuelas = document.getElementById("crearEscuelas").value.trim();
+  const rol = document.getElementById("crearRol").value;
+  const mensaje = document.getElementById("crearMensaje");
+
+  mensaje.textContent = "";
+
+  if (!usuario || !password) {
+    mensaje.textContent = "Usuario y contraseña son obligatorios.";
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/admin/usuarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario, password, escuelas, rol }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      mensaje.textContent = data.error || "Error creando usuario.";
+      return;
+    }
+
+    mensaje.textContent = "Usuario creado correctamente.";
+    document.getElementById("crearUsuario").value = "";
+    document.getElementById("crearPassword").value = "";
+    document.getElementById("crearEscuelas").value = "";
+
+    adminCargarUsuarios();
+  } catch (e) {
+    console.error(e);
+    mensaje.textContent = "Error de conexión.";
+  }
+}
+
+async function guardarCambiosUsuario() {
+  const usuario = document.getElementById("editarUsuario").value.trim();
+  const password = document.getElementById("editarPassword").value.trim();
+  const escuelas = document.getElementById("editarEscuelas").value.trim();
+  const rol = document.getElementById("editarRol").value;
+  const mensaje = document.getElementById("editarMensaje");
+
+  mensaje.textContent = "";
+
+  if (!usuario) {
+    mensaje.textContent = "Debe indicar un usuario.";
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/admin/usuarios/${encodeURIComponent(usuario)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, escuelas, rol }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      mensaje.textContent = data.error || "Error editando usuario.";
+      return;
+    }
+
+    mensaje.textContent = "Usuario actualizado.";
+    adminCargarUsuarios();
+  } catch (e) {
+    console.error(e);
+    mensaje.textContent = "Error de conexión.";
+  }
+}
+
+// ===========================
+//   ADMIN - LOGS
+// ===========================
+
+async function adminCargarLogs() {
+  const cont = document.getElementById("tablaLogs");
+  cont.textContent = "Cargando logs...";
+
+  try {
+    const res = await fetch("/api/admin/logs?limit=200");
+    const data = await res.json();
+
+    if (!res.ok) {
+      cont.textContent = data.error || "Error cargando logs.";
+      return;
+    }
+
+    const logs = data.logs || [];
+    if (!logs.length) {
+      cont.textContent = "No hay registros en la bitácora.";
+      return;
+    }
+
+    const tabla = document.createElement("table");
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr>
+        <th>Fecha/Hora</th>
+        <th>Usuario</th>
+        <th>Acción</th>
+        <th>Escuela</th>
+        <th>Detalle</th>
+      </tr>
+    `;
+    tabla.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    logs.forEach((l) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${l.fechaHora}</td>
+        <td>${l.usuario}</td>
+        <td>${l.accion}</td>
+        <td>${l.escuela}</td>
+        <td>${l.detalle}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tabla.appendChild(tbody);
+
+    cont.innerHTML = "";
+    cont.appendChild(tabla);
+  } catch (e) {
+    console.error(e);
+    cont.textContent = "Error de conexión.";
+  }
+}
+
+// ===========================
+//   ADMIN - RESUMEN
+// ===========================
+
+async function adminCargarResumen() {
+  const cont = document.getElementById("tablaResumen");
+  cont.textContent = "Cargando resumen...";
+
+  try {
+    const res = await fetch("/api/admin/resumen");
+    const data = await res.json();
+
+    if (!res.ok) {
+      cont.textContent = data.error || "Error cargando resumen.";
+      return;
+    }
+
+    const lista = data.resumen || [];
+    if (!lista.length) {
+      cont.textContent = "No hay datos para mostrar.";
+      return;
+    }
+
+    const tabla = document.createElement("table");
+    const thead = document.createElement("thead");
+    thead.innerHTML = `
+      <tr>
+        <th>Escuela</th>
+        <th>Total de registros</th>
+      </tr>
+    `;
+    tabla.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    lista.forEach((r) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.escuela}</td>
+        <td>${r.total}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tabla.appendChild(tbody);
+
+    cont.innerHTML = "";
+    cont.appendChild(tabla);
+  } catch (e) {
+    console.error(e);
+    cont.textContent = "Error de conexión.";
+  }
+}
+
+// ===========================
+//   INICIALIZAR APP
+// ===========================
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await cargarUsuarioYEscuelas();
+  mostrarVista("lista");
+});
